@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:15
+    container_name: kolaysatis-db
+    environment:
+      POSTGRES_DB: kolaysatis
+      POSTGRES_USER: kolaysatis_user
+      POSTGRES_PASSWORD: kolaysatis_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kolaysatis-network
+
+  # Backend Service (Node.js)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kolaysatis-backend
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: kolaysatis
+      DB_USER: kolaysatis_user
+      DB_PASSWORD: kolaysatis_pass
+      JWT_SECRET: your_jwt_secret_key_here
+    depends_on:
+      - database
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - kolaysatis-network
+
+  # Frontend Service (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kolaysatis-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:3001/api
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - kolaysatis-network
+
+volumes:
+  postgres_data:
+
+networks:
+  kolaysatis-network:
+    driver: bridge
