@@ -5,12 +5,16 @@ const morgan = require('morgan');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const User = require('./models/User');
 
 // Middleware
 app.use(helmet());
 app.use(cors());
 app.use(morgan('combined'));
 app.use(express.json());
+
+const { generateToken, authenticateToken, requireAdmin, requireSellerOrAdmin } = require('./middleware/auth');
+const { body, validationResult } = require('express-validator');
 
 // Mevcut routes
 app.get('/', (req, res) => {
@@ -338,6 +342,160 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+// Register endpoint
+app.post('/api/register', [
+  body('first_name').notEmpty().withMessage('Ad zorunlu'),
+  body('last_name').notEmpty().withMessage('Soyad zorunlu'),
+  body('email').isEmail().withMessage('Geçerli email adresi girin'),
+  body('password').isLength({ min: 6 }).withMessage('Şifre en az 6 karakter olmalı'),
+  body('role').optional().isIn(['admin', 'seller', 'customer']).withMessage('Geçersiz rol')
+], async (req, res) => {
+  try {
+    // Validation hatalarını kontrol et
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        message: 'Validation hatası!',
+        errors: errors.array()
+      });
+    }
+
+    const { first_name, last_name, email, password, role = 'customer' } = req.body;
+
+    // Email zaten var mı kontrol et
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({
+        message: 'Bu email adresi zaten kullanılıyor!',
+        error: 'Email already exists'
+      });
+    }
+
+    // Yeni kullanıcı oluştur
+    const newUser = await User.create({
+      first_name,
+      last_name,
+      email,
+      password, // bcrypt hook'u otomatik şifreleyecek
+      role
+    });
+
+    // Token oluştur
+    const token = generateToken(newUser);
+
+    res.status(201).json({
+      message: 'Kullanıcı başarıyla oluşturuldu!',
+      status: 'success',
+      user: {
+        id: newUser.id,
+        name: `${newUser.first_name} ${newUser.last_name}`,
+        email: newUser.email,
+        role: newUser.role
+      },
+      token
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Kullanıcı oluşturulamadı!',
+      error: error.message
+    });
+  }
+});
+
+// Login endpoint
+app.post('/api/login', [
+  body('email').isEmail().withMessage('Geçerli email adresi girin'),
+  body('password').notEmpty().withMessage('Şifre zorunlu')
+], async (req, res) => {
+  try {
+    const User = require('./models/User');
+    console.log('🔍 Login isteği geldi:', req.body); // DEBUG
+    // Validation hatalarını kontrol et
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      console.log('❌ Validation hatası:', errors.array()); // DEBUG
+      return res.status(400).json({
+        message: 'Validation hatası!',
+        errors: errors.array()
+      });
+    }
+
+    const { email, password } = req.body;
+
+    // Kullanıcıyı bul
+    const user = await User.findOne({ where: { email } });
+    console.log('👤 Bulunan kullanıcı:', user ? 'VAR' : 'YOK'); // DEBUG
+    if (!user) {
+      return res.status(401).json({
+        message: 'Email veya şifre hatalı!',
+        error: 'Invalid credentials'
+      });
+    }
+
+    // Şifreyi kontrol et
+    console.log('🔐 Şifre kontrolü başlıyor...'); // DEBUG
+    //const isPasswordValid = true;
+    const isPasswordValid = await user.checkPassword(password);
+    console.log('🔐 Şifre geçerli mi:', isPasswordValid); // DEBUG
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        message: 'Email veya şifre hatalı!',
+        error: 'Invalid credentials'
+      });
+    }
+
+    // Aktif kullanıcı mı kontrol et
+    if (!user.is_active) {
+      return res.status(401).json({
+        message: 'Hesabınız aktif değil!',
+        error: 'Account not active'
+      });
+    }
+
+    // Last login güncelle
+    await user.update({ last_login: new Date() });
+
+    // Token oluştur
+    const token = generateToken(user);
+
+    res.json({
+      message: 'Giriş başarılı!',
+      status: 'success',
+      user: {
+        id: user.id,
+        name: `${user.first_name} ${user.last_name}`,
+        email: user.email,
+        role: user.role
+      },
+      token
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Giriş yapılamadı!',
+      error: error.message
+    });
+  }
+});
+
+// Profile endpoint (korumalı)
+app.get('/api/profile', authenticateToken, (req, res) => {
+  res.json({
+    message: 'Profil bilgileri',
+    user: req.user || { id: 49, name: 'Test User', role: 'admin' }
+  });
+});
+
+// Test korumalı endpoint
+app.get('/api/admin-test', authenticateToken, requireAdmin, (req, res) => {
+  res.json({
+    message: 'Admin paneline hoş geldiniz!',
+    user: req.user,
+    info: 'Bu endpoint sadece admin kullanıcıları görebilir'
+  });
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({ message: 'Endpoint bulunamadı!' });
@@ -362,4 +520,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`👥 Users: http://localhost:${PORT}/api/users`);
   console.log(`📂 Categories: http://localhost:${PORT}/api/categories`);
   console.log(`🛒 Products: http://localhost:${PORT}/api/products`);
+  console.log(`🔐 Register: http://localhost:${PORT}/api/register`);
+  console.log(`🔑 Login: http://localhost:${PORT}/api/login`);
+  console.log(`👤 Profile: http://localhost:${PORT}/api/profile`);
 });
