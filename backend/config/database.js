@@ -1,17 +1,17 @@
 const { Sequelize } = require('sequelize');
 
-// Database bağlantısı
+// Docker ortamında PostgreSQL kullan
 const sequelize = new Sequelize({
   database: process.env.DB_NAME || 'kolaysatis',
-  username: process.env.DB_USER || 'kolaysatis_user', 
-  password: process.env.DB_PASSWORD || 'kolaysatis_pass',
-  host: process.env.DB_HOST || 'database', // Docker container adı
+  username: process.env.DB_USER || 'kolaysatis_user',
+  password: process.env.DB_PASSWORD || 'kolaysatis_pass', 
+  host: process.env.DB_HOST || 'database',
   port: process.env.DB_PORT || 5432,
   dialect: 'postgres',
-  logging: false, // SQL loglarını kapatıyoruz
+  logging: false,
   define: {
-    timestamps: true, // createdAt ve updatedAt otomatik
-    underscored: true, // snake_case
+    timestamps: true,
+    underscored: true,
   },
   retry: {
     match: [

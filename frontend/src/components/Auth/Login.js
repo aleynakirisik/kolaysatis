@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { authAPI } from '../../services/api';
+import { toast } from 'react-toastify';
 
-const Login = () => {
-  const navigate = useNavigate(); // React Router navigation hook'u
+const Login = ({ onLogin }) => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -23,29 +25,28 @@ const Login = () => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Token'ı localStorage'a kaydet
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+      const response = await authAPI.login(formData);
+      
+      if (response.data && response.data.user && response.data.token) {
+        // onLogin callback'ini çağır
+        onLogin(response.data.user, response.data.token);
         
-        alert('Giriş başarılı! Dashboard\'a yönlendiriliyorsunuz...');
-        // React Router ile dashboard'a yönlendir
+        toast.success('Giriş başarılı! 🎉');
+        
+        // Dashboard'a yönlendir
         navigate('/dashboard');
       } else {
-        setError(data.message || 'Giriş yapılamadı!');
+        setError('Giriş yapılamadı! Lütfen tekrar deneyin.');
       }
     } catch (err) {
-      setError('Bağlantı hatası! Lütfen tekrar deneyin.');
+      console.error('Login error:', err);
+      
+      if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else {
+        setError('Bağlantı hatası! Lütfen tekrar deneyin.');
+      }
+      toast.error('Giriş yapılamadı!');
     } finally {
       setLoading(false);
     }
