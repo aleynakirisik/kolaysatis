@@ -1,0 +1,77 @@
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:15
+    container_name: kolaysatis-db
+    environment:
+      POSTGRES_DB: kolaysatis
+      POSTGRES_USER: kolaysatis_user
+      POSTGRES_PASSWORD: kolaysatis_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - kolaysatis-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kolaysatis_user -d kolaysatis"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend Service (Node.js)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kolaysatis-backend
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: kolaysatis
+      DB_USER: kolaysatis_user
+      DB_PASSWORD: kolaysatis_pass
+      JWT_SECRET: kolaysatis_super_secret_key_2024
+      REFRESH_SECRET: kolaysatis_refresh_key_2024
+      SESSION_SECRET: kolaysatis_session_secret_2024
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - kolaysatis-network
+    restart: unless-stopped
+
+  # Frontend Service (React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kolaysatis-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:3001/api
+      CHOKIDAR_USEPOLLING: true
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - kolaysatis-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  kolaysatis-network:
+    driver: bridge
